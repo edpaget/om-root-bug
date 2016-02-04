@@ -6,25 +6,38 @@
 
 (defonce app-state (atom {:data {:id "1" :name "Ted" :type "cool-stuff"}}))
 
-(defui ^:once RootComponent
+(defui ^:once ChildComponent
   static om/IQuery
   (query [this]
-         [{:data [:id :name :type]}])
+         [:id :name :type])
   Object
   (render [this]
-          (prn (om/props this))
-          (let [{:keys [id name type]} (-> this om/props :data)]
+          (let [{:keys [id name type]} (-> this om/props)]
             (dom/div nil
                      (dom/h1 nil id)
                      (dom/h1 nil name)
                      (dom/h1 nil type)))))
+
+(def child-component (om/factory ChildComponent))
+
+(defui ^:once RootComponent
+  static om/IQuery
+  (query [this]
+         [{:data (om/get-query ChildComponent)}])
+  Object
+  (render [this]
+          (child-component (-> this om/props :data))))
 
 (defn read
   [{:keys [state query parser] :as env} key _]
   (let [st @state]
     {:value (om/db->tree query (key st) st)}))
 
-(def parser (om/parser {:read read :mutate (fn [])}))
+(defn mutate
+  [{:keys [state query parser] :as env} key _]
+  {:action #(swap! state update-in [:data :id] (constantly "2"))})
+
+(def parser (om/parser {:read read :mutate mutate}))
 
 (defonce reconciler
   (om/reconciler
@@ -35,17 +48,18 @@
 
 (defn ^:export init
   []
-  (prn "HERE")
   (if (nil? @root)
     (let [target (js/document.getElementById "app")]
       (om/add-root! reconciler RootComponent target)
       (reset! root RootComponent))
     (om/force-root-render! reconciler)))
 
-(init)
+(when-not @root
+  (init))
 
-(prn (-> reconciler om/get-indexer deref :class-path->query))
+(prn "class-path->query "(-> reconciler om/get-indexer deref :class-path->query))
 
-(js/setTimeout #(do (om/set-query! reconciler {:query [{:data [:id]}]})
-                    (prn (-> reconciler om/get-indexer deref :class-path->query)))
-               5000)
+(js/setTimeout #(do (om/transact! reconciler `[(new/id) :data])
+                    (om/set-query! reconciler {:query [{:data [:id]}]})
+                    (prn "class-path->query" (-> reconciler om/get-indexer deref :class-path->query)))
+               1000)
